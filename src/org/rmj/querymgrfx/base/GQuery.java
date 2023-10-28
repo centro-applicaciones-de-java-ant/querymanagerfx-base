@@ -14,13 +14,14 @@ import java.util.logging.Logger;
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.math.NumberUtils;
+import org.json.simple.JSONObject;
 import org.rmj.appdriver.GCrypt;
 import org.rmj.appdriver.GDBFChain;
 import org.rmj.appdriver.MiscUtil;
 import org.rmj.appdriver.SQLUtil;
 import org.rmj.appdriver.GRider;
 import org.rmj.appdriver.agentfx.ui.showFXDialog;
-import org.rmj.replication.utility.LogWrapper;
+import org.rmj.lib.net.LogWrapper;
 
 /**
  *
@@ -112,18 +113,14 @@ public class GQuery {
                     result = true;
                 }
                 else{
-                    //TODO: Bat wala ang ALT+175
-                    String info = showFXDialog.kwikBrowse(poGRider, loRS, "Code»Branch", "sBranchCD»sBranchNm", "sBranchCD»sBranchNm", 0);
-                    if(info.length()>0){
-                        String xspl[] = info.split("»");
-                        branchcd = xspl[0];
-                        branchnm = xspl[1];
-                        branchip = xspl[2];
+                    JSONObject loJSON = showFXDialog.jsonBrowse(poGRider, loRS, "Code»Branch", "sBranchCD»sBranchNm");
+                    if (loJSON != null){
+                        branchcd = (String) loJSON.get("sBranchCD");
+                        branchnm = (String) loJSON.get("sBranchNm");
+                        branchip = (String) loJSON.get("sDBIPAddr");
                         result = true;
-                    }
-                    else{
-                        message = poGRider.getMessage();
-                    }                    
+                    } else
+                        message = poGRider.getMessage();               
                 }
             }
         } catch (SQLException ex) {
@@ -153,26 +150,20 @@ public class GQuery {
         ResultSet loRS = poGRider.executeQuery(query);
         
         try {
-            if(loRS.next()){
-               int xcount = 0;
-               
+            if(loRS.next()){               
                if(code || MiscUtil.RecordCount(loRS) == 1){
                     destntcd = loRS.getString("sBranchCD");
                     destntnm = loRS.getString("sBranchNm");
                     result = true;
-                }
-                else{
-                    //TODO: Bat wala ang ALT+15
-                    String info = showFXDialog.kwikBrowse(poGRider, loRS, "Code»Branch", "sBranchCD»sBranchNm", "sBranchCD»sBranchNm", 0);
-                    if(info.length()>0){
-                        String xspl[] = info.split("»");
-                        destntcd = xspl[0];
-                        destntnm = xspl[1];
+                } else{
+                    JSONObject loJSON = showFXDialog.jsonBrowse(poGRider, loRS, "Code»Branch", "sBranchCD»sBranchNm");
+                   
+                    if (loJSON != null){
+                        destntcd = (String) loJSON.get("sBranchCD");
+                        destntnm = (String) loJSON.get("sBranchNm");
                         result = true;
-                    }
-                    else{
-                        message = poGRider.getMessage();
-                    }                    
+                    } else 
+                        message = poGRider.getMessage();    
                 }
             }
         } catch (SQLException ex) {
@@ -183,7 +174,7 @@ public class GQuery {
         return result;
     }
     
-    public boolean executeSolution(){
+    public boolean executeSolution() throws SQLException{
        if(auto_query.length() == 0){
           message = "No command/solution to auto-execute detected...";
           return false;
@@ -218,7 +209,7 @@ public class GQuery {
           //Move the cursor to the target row 
           rsdata.absolute(row);
           
-          result = MiscUtil.makeSQL(rsdata.getMetaData(), MiscUtil.row2Map(rsdata), table, "");
+          result = MiscUtil.makeSQL(rsdata.getMetaData(), MiscUtil.row2Map(rsdata), table);
           
           //Move the cursor back to the original position
           rsdata.absolute(prev_row);
@@ -230,7 +221,7 @@ public class GQuery {
        return result;
     }
     
-    public boolean execute(String query, boolean log, String division){
+    public boolean execute(String query, boolean log, String division) throws SQLException{
         boolean result=false;
 
         //initialize error message
@@ -246,7 +237,7 @@ public class GQuery {
         
         //establish the connection
         gchain = poGRider.getGDBFChain(branchip);
-
+        
         //validate branch 
         String ip = validBranch(branchcd, gchain.getConnection());
         if(ip.length() == 0){
@@ -258,8 +249,8 @@ public class GQuery {
         query = query.trim();
         
         //Make sure that the length of SQL statement is within the SET length...
-        if(query.length() > 2045){
-            message = "Cannot execute more than 2045 characters SQL statement...";
+        if(query.length() > 4112){
+            message = "Cannot execute more than 4112 characters SQL statement...";
             return false;
         }
         
@@ -309,14 +300,20 @@ public class GQuery {
     //create, alter, drop, truncate, rename
     //sysadmin : create, rename
     //manager  : all commands...
-    private boolean executeDDL(String query, boolean log){
+    private boolean executeDDL(String query, boolean log) throws SQLException{
         boolean result=true;
         
         String right = getRights(poGRider.getUserID()).toLowerCase();
         
-        if(right.equalsIgnoreCase("encoder") || right.equalsIgnoreCase("supervisor")){
+        if(right.equalsIgnoreCase("encoder")){
             message = "Associates/Supervisors are not authorized user of this statement...";
             return false;
+        }
+        else if(right.equalsIgnoreCase("supervisor")){
+            if(!query.startsWith("USE ")){
+                message = "Associates/Supervisors are not authorized user of this statement...";
+                return false;
+            } 
         }
         else if(right.equalsIgnoreCase("sysadmin")){
             String clone = query.toUpperCase();
@@ -389,7 +386,7 @@ public class GQuery {
     
     //execute Data Manipulation commands specifically for retrieving only
     //select, describe, show, explain
-    private boolean executeDMLRetrieve(String query, boolean log){
+    private boolean executeDMLRetrieve(String query, boolean log) throws SQLException{
         boolean result=false;
         log = true;
         
@@ -515,7 +512,7 @@ public class GQuery {
     //supervisor: maximum change <= 50
     //sysadmin  : maximum change <=100
     //engineer  : unlimited...
-    private boolean executeDMLUpdate(String query, boolean log, String division){
+    private boolean executeDMLUpdate(String query, boolean log, String division) throws SQLException{
         boolean result=false;
 
         String right = getRights(poGRider.getUserID()).toLowerCase();
