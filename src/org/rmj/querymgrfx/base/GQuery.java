@@ -634,9 +634,9 @@ public class GQuery {
                 count = 0;
                 return false;
             }
-            
-            gchain.commitTrans();
         }
+        
+        gchain.commitTrans();
         
         count = xcount;
         return result;
